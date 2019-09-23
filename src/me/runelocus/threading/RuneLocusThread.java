@@ -13,19 +13,16 @@ public class RuneLocusThread extends Thread {
     private DriverConfig driverConfig;
     private HandleLocus handleLocus;
     private int failed;
+    private int voteCount;
+    private long startTime;
     private String threadName;
+    private String status;
     private String proxyIP;
     private String proxyPort;
 
     public RuneLocusThread(boolean headless, String threadName) {
         this.threadName = threadName;
-        if (Constants.useProxies) {
-            grabValidProxy();
-            this.driverConfig = new DriverConfig(headless, proxyIP, proxyPort);
-        } else {
-            this.driverConfig = new DriverConfig(headless);
-        }
-        this.handleLocus = new HandleLocus(this);
+        setupThread(headless);
     }
 
     public synchronized void run() {
@@ -35,29 +32,30 @@ public class RuneLocusThread extends Thread {
                     if (handleLocus.successfulVote()) {
                         System.err.println("We successfully voted: " + getThreadName());
                         Utils.takeScreenShot(getWebDriver(), "Successful Vote - " + failed + " - " + getThreadName());
-                        clearThread();
-                        Core.setVoted(Core.getVoted() + 1);
-                        System.err.println("Vote Count: " + Core.getVoted());
+                        resetThread();
+                        voteCount++;
+                        System.err.println("Vote Count: " + voteCount);
                         Condition.sleep(2500);
                     } else if (handleLocus.alreadyVoted()) {
                         System.err.println("We already voted on this IP: " + getThreadName());
-                        clearThread();
+                        resetThread();
                         Condition.sleep(2500);
+                        failed++;
                     } else if (handleLocus.failedVote()) {
                         System.err.println("FAILED VOTE: " + failed + " - " + getThreadName());
                         failed++;
-                        System.out.println("Visiting Voting Page...");
+                        setStatus("Visiting Voting Page...");
                         handleLocus.visitVotingPage();
                     } else {
-                        System.out.println("Visiting Voting Page...");
+                        setStatus("Visiting Voting Page...");
                         handleLocus.visitVotingPage();
                     }
                 } else {
                     if (handleLocus.getTimeLeft() <= 0) {
-                        System.out.println("Passed robot check, let's vote.");
+                        setStatus("Passed robot check, let's vote.");
                         handleLocus.vote(failed);
                     } else {
-                        System.out.println("Waiting to pass anti-robot - stage: " + handleLocus.getTimeLeft());
+                        setStatus("Waiting to pass anti-robot - stage: " + handleLocus.getTimeLeft());
                         Condition.sleep(1000);
                     }
                 }
@@ -72,30 +70,43 @@ public class RuneLocusThread extends Thread {
         final String proxy = Core.getProxyHandler().grabProxy();
         proxyIP = proxy.split(":")[0];
         proxyPort = proxy.split(":")[1];
-        System.out.println("Set proxyIP: " + proxyIP);
-        System.out.println("Set proxyPort: " + proxyPort);
+        setStatus("Set proxyIP: " + proxyIP);
+        setStatus("Set proxyPort: " + proxyPort);
         if (!Core.getProxyHandler().checkProxy(proxyIP, Integer.parseInt(proxyPort))) {
             Core.getProxyHandler().resetProxy(proxyIP, proxyPort);
-            System.err.println("Proxy invalid, let's try another");
+            setStatus("Proxy invalid, let's try another");
             grabValidProxy();
         }
     }
 
-    public void clearThread() {
-        System.out.println("We've finished voting, let's change proxies: " + getThreadName());
+    public void resetThread() {
+        setStatus("We've finished voting, let's change proxies: " + getThreadName());
         Core.getProxyHandler().resetProxy(proxyIP, proxyPort);
-        System.out.println("Stopping current thread: " + getThreadName());
+        setStatus("pausing current thread: " + getThreadName());
         setRunning(false);
+        setStatus("Exiting out of browser.");
         getWebDriver().quit();
+        setStatus("nulling out variables.");
         driverConfig = null;
-        System.out.println("Attempting to start a new thread: " + getThreadName());
-        final RuneLocusThread thread = new RuneLocusThread(Constants.headless, getThreadName());
-        thread.start();
-        thread.setRunning(true);
-        System.out.println("New thread has been started: " + getThreadName());
+        handleLocus = null;
         Runtime.getRuntime().gc();
         System.gc();
-        Condition.sleep(2500);
+        setupThread(Constants.headless);
+        setStatus("Starting up thread again.");
+        setRunning(true);
+        run();
+        Condition.sleep(1250);
+    }
+
+    private void setupThread(boolean headless) {
+        setStatus("Setting up the thread.");
+        if (Constants.useProxies) {
+            grabValidProxy();
+            this.driverConfig = new DriverConfig(headless, proxyIP, proxyPort);
+        } else {
+            this.driverConfig = new DriverConfig(headless);
+        }
+        this.handleLocus = new HandleLocus(this);
     }
 
     public WebDriver getWebDriver() {
@@ -114,6 +125,14 @@ public class RuneLocusThread extends Thread {
         this.running = running;
     }
 
+    public int getVoteCount() {
+        return voteCount;
+    }
+
+    public long getStartTime() {
+        return startTime;
+    }
+
     public int getFailed() {
         return failed;
     }
@@ -124,5 +143,14 @@ public class RuneLocusThread extends Thread {
 
     public void setThreadName(String threadName) {
         this.threadName = threadName;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        System.out.println(status);
+        this.status = status;
     }
 }
